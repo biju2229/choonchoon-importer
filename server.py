@@ -20,10 +20,7 @@ from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 API_ID = int(os.environ.get("TELEGRAM_API_ID", 37197679))
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "aea6a0e5a2d75a805c19f6401d3d78e1")
 CHANNEL_USERNAME = os.environ.get("TELEGRAM_CHANNEL", "TejalShikshaVibhag")
-SESSION_STRING = os.environ.get(
-    "TELEGRAM_SESSION", 
-    "1BVtsOHEBu6T8sbP3tx6EWaj_thzIpwk2vl70CSKZ0HAxe-xAMI40uSWxciX6lbhti7g0S-Sz0bzFatusJMFxl2uvSDo-ZsfZ2V7xYzhNvqMTCiEbsgOYv7vio4j4i0gRodambkkWCuuZi_om6F7HRGkAimowwp88biLPPnnrZ07qZwCu75cnYpMd4RPKxClqRMP8Pokxfsi1XlRni-tGLENXaif9g5L9vbiTHLMmNEtN-wzYohFsHEhdscXgNunskhwqGwcv85GhZxPz-CiD9wE9Afq0de9U-K1S3EtrT2v6ijr4OnHHnhi3qf5y-65MGVRJ1UsClkeK09E4VfUX_N4pHffEsJs="
-)
+SESSION_STRING = os.environ.get("TELEGRAM_SESSION", "1BVtsOHEBu3MjcBuWuNEcfspSiq5MUm6SMEDTH3aMqPn_QkMvAE3XPToGks-4Rc3fP1VffzV4uNBQOHQ7ruqQk71l-XYkWSADYt0yMbGFA6usqAt5Mv5yuiGTRPL69o_Ne04zRM3xxfzL8GYoAZ_xF_AhMoRUmINyqgSF8bJ60OhCFRRtgd_AKD08pIkAs5J64BeOVvTasqEzgzcHrTfeO95uUYFOFS5N69yyjCF289XqUWvAx74ZznHl4zH9eyuPSLKyFIsWdPtsBsC3PvyxLMRWiQIa2nWiLMd22myapEynqljBMHj-I6WhiZ1RbofoZFF_P_OFO0FlmJCCMoRfzlhhDlkExzg=")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://nhfxdmuzazvevfahebts.supabase.co")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "sb_publishable_MAmK6J1fiwVVDbDeNhsJEw_LW8FVbeO")
