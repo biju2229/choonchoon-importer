@@ -6,6 +6,7 @@ Handles full text + rich photo attachments with Storage & Base64 dual-fallback.
 
 import os
 import sys
+import re
 import json
 import time
 import io
@@ -169,12 +170,29 @@ def post_to_choonchoon(text: str, photo_url: str = None) -> bool:
         print(f"   [Choon Post Error]: {e}")
         return False
 
+def clean_telegram_text(raw_text: str) -> str:
+    """Removes messy Telegram markdown stars (**), hashes, and cleans spacing."""
+    if not raw_text:
+        return ""
+    # Strip asterisks (stars) used for bold/italic in Telegram
+    text = re.sub(r'\*{1,}', '', raw_text)
+    # Strip markdown formatting symbols
+    text = re.sub(r'_{2,}', '', text)
+    text = re.sub(r'~{2,}', '', text)
+    text = re.sub(r'`{1,}', '', text)
+    # Clean multiple spaces on single line
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    # Clean multiple blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 async def process_msg(client, message):
     if message.id in PROCESSED_IDS:
         return
     PROCESSED_IDS.add(message.id)
 
-    text = message.text or message.message or ""
+    raw_text = message.raw_text or message.text or message.message or ""
+    text = clean_telegram_text(raw_text)
     photo_url = None
 
     print(f"\n📩 [New Update from @{CHANNEL_USERNAME}] (Msg ID: {message.id})")
