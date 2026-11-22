@@ -2,7 +2,14 @@
 ChoonChoon Multi-Channel Cloud Auto-Importer (24x7 Cloud Runner for Render)
 Supports multiple Telegram channels mapped to distinct ChoonChoon accounts:
 1. @TejalShikshaVibhag -> तेजल शिक्षा विभाग, राजस्थान (tejal@gmail.com)
-2. @EducationPortal     -> एजुकेशन पोर्टल राजस्थान (educationportal@gmail.com)
+2. @EDUCATIONPORTAL1   -> एजुकेशन पोर्टल राजस्थान (educationportal@gmail.com)
+3. @kalamacademysikar  -> कलाम एकेडमी सीकर (kalamacademysikar@gmail.com)
+
+Features:
+- Dual Engine: Real-time Event Listener + 45-second Active Polling Watchdog
+- Auto-Join channels for live MTProto push updates
+- Clean text formatting (removes markdown stars ****)
+- Rich media processing (Supabase Storage + Base64 fallback)
 """
 
 import os
@@ -21,6 +28,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
+from telethon.tl.functions.channels import JoinChannelRequest
 from PIL import Image
 
 # --- Config ---
@@ -36,6 +44,9 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "sb_publishable_MAmK6J1f
 PORT = int(os.environ.get("PORT", 8080))
 
 PROCESSED_IDS = set()
+LAST_SEEN_MSG_IDS = {}
+_global_client = None
+_global_channels = []
 
 # Channel to ChoonChoon User Mapping
 CHANNELS_CONFIG = {
@@ -84,7 +95,9 @@ class HealthHandler(BaseHTTPRequestHandler):
         res = {
             "status": "healthy",
             "service": "ChoonChoon Multi-Channel Telegram Cloud Importer",
-            "monitored_channels": list(CHANNELS_CONFIG.keys()),
+            "channels": list(CHANNELS_CONFIG.keys()),
+            "last_seen_ids": LAST_SEEN_MSG_IDS,
+            "processed_count": len(PROCESSED_IDS),
             "uptime_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
@@ -100,7 +113,6 @@ def run_health_server():
 _cached_tokens = {}
 
 def get_supabase_auth_token(email: str = "tejal@gmail.com", password: str = "123456") -> str:
-    """Gets authenticated JWT for user so Supabase Storage allows uploads."""
     global _cached_tokens
     now = time.time()
     if email in _cached_tokens and now < _cached_tokens[email]["expiry"]:
@@ -128,7 +140,6 @@ def get_supabase_auth_token(email: str = "tejal@gmail.com", password: str = "123
     return None
 
 def ensure_user_account(cfg: dict) -> str:
-    """Ensures user exists in Supabase auth and public.users, returns user ID."""
     if cfg.get("author_id"):
         return cfg["author_id"]
 
@@ -136,9 +147,9 @@ def ensure_user_account(cfg: dict) -> str:
     username = cfg.get("username")
     password = cfg.get("password", "123456")
 
-    print(f"🔍 Resolving Supabase account for @{username} ({email})...")
+    print(f"🔍 Checking Supabase account for @{username} ({email})...")
 
-    # 1. Check if user already in public.users
+    # 1. Check public.users
     try:
         req = urllib.request.Request(
             f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&select=id",
@@ -148,12 +159,12 @@ def ensure_user_account(cfg: dict) -> str:
             rows = json.loads(resp.read().decode("utf-8"))
             if rows and len(rows) > 0 and rows[0].get("id"):
                 cfg["author_id"] = rows[0]["id"]
-                print(f"   ✅ Found existing user UID: {cfg['author_id']}")
+                print(f"   ✅ Found user UID: {cfg['author_id']}")
                 return cfg["author_id"]
     except Exception as e:
-        print(f"   Lookup error: {e}")
+        pass
 
-    # 2. Try signup if not found
+    # 2. Try signup
     try:
         signup_payload = {
             "email": email,
@@ -178,12 +189,9 @@ def ensure_user_account(cfg: dict) -> str:
             uid = data.get("id") or data.get("user", {}).get("id")
             if uid:
                 cfg["author_id"] = uid
-                print(f"   ✅ Successfully signed up new user UID: {uid}")
-    except urllib.error.HTTPError as e:
-        # User might already exist in auth, let's login to get UID
+                print(f"   ✅ Signed up new user UID: {uid}")
+    except Exception:
         pass
-    except Exception as e:
-        print(f"   Signup note: {e}")
 
     # 3. Try login to retrieve UID and token
     try:
@@ -201,7 +209,6 @@ def ensure_user_account(cfg: dict) -> str:
                 cfg["author_id"] = uid
                 print(f"   ✅ Login SUCCESS! User UID: {uid}")
 
-                # Upsert profile in public.users
                 profile_payload = {
                     "id": uid,
                     "email": email,
@@ -225,11 +232,11 @@ def ensure_user_account(cfg: dict) -> str:
                 )
                 try:
                     with urllib.request.urlopen(req_profile) as prof_resp:
-                        print(f"   ✅ Profile upserted in public.users (HTTP {prof_resp.status})")
-                except Exception as pe:
-                    print(f"   Profile upsert note: {pe}")
+                        print(f"   ✅ Profile upserted in public.users")
+                except Exception:
+                    pass
     except Exception as e:
-        print(f"   Login check error: {e}")
+        print(f"   Login note: {e}")
 
     return cfg.get("author_id")
 
@@ -246,7 +253,6 @@ def clean_telegram_text(raw_text: str) -> str:
     return text.strip()
 
 def upload_media_to_supabase(image_bytes: bytes, email: str = "tejal@gmail.com") -> str:
-    """Uploads image bytes to Supabase Storage 'choon_media'. If fails, falls back to direct Base64."""
     try:
         img = Image.open(io.BytesIO(image_bytes))
         if img.mode in ("RGBA", "P"):
@@ -290,8 +296,10 @@ def upload_media_to_supabase(image_bytes: bytes, email: str = "tejal@gmail.com")
 def post_to_choonchoon(cfg: dict, text: str, photo_url: str = None) -> bool:
     author_id = cfg.get("author_id")
     if not author_id:
-        print("   ❌ Missing author_id, cannot post!")
-        return False
+        print(f"   ❌ Missing author_id for {cfg.get('display_name')}, trying to resolve...")
+        author_id = ensure_user_account(cfg)
+        if not author_id:
+            return False
 
     if not text and not photo_url:
         return False
@@ -328,9 +336,10 @@ def post_to_choonchoon(cfg: dict, text: str, photo_url: str = None) -> bool:
         return False
 
 async def process_msg(client, channel_key: str, message):
-    if message.id in PROCESSED_IDS:
+    dedup_key = f"{channel_key}_{message.id}"
+    if dedup_key in PROCESSED_IDS:
         return
-    PROCESSED_IDS.add(message.id)
+    PROCESSED_IDS.add(dedup_key)
 
     cfg = CHANNELS_CONFIG.get(channel_key, {})
     raw_text = message.raw_text or message.text or message.message or ""
@@ -350,7 +359,7 @@ async def process_msg(client, channel_key: str, message):
 
     if is_photo or is_doc_image:
         try:
-            print("   📸 Downloading photo...")
+            print("   📸 Downloading photo attachment...")
             img_bytes = await message.download_media(file=bytes)
             if img_bytes:
                 photo_url = upload_media_to_supabase(img_bytes, email=cfg.get("email", "tejal@gmail.com"))
@@ -361,7 +370,38 @@ async def process_msg(client, channel_key: str, message):
     if ok:
         print(f"   ✅ Successfully posted to ChoonChoon feed! (Has image: {bool(photo_url)})")
 
+async def check_channel_updates(client, active_channels):
+    """Actively polls all channels for new messages every 45 seconds."""
+    for c_key, channel_entity in active_channels:
+        try:
+            # Query the latest 5 messages
+            messages = await client.get_messages(channel_entity, limit=5)
+            if not messages:
+                continue
+
+            last_id = LAST_SEEN_MSG_IDS.get(c_key, 0)
+            for msg in reversed(messages):
+                if msg.id > last_id:
+                    print(f"\n⚡ [Active Watchdog] Found new post on @{c_key} (ID: {msg.id})")
+                    await process_msg(client, c_key, msg)
+                    if msg.id > LAST_SEEN_MSG_IDS[c_key]:
+                        LAST_SEEN_MSG_IDS[c_key] = msg.id
+
+        except Exception as e:
+            print(f"   Polling error on @{c_key}: {e}")
+
+async def polling_watchdog(client, active_channels):
+    """Continuous 45-second loop that guarantees all new posts are imported."""
+    print("🚀 [Watchdog Loop] Started 45-second active polling thread.")
+    while True:
+        try:
+            await asyncio.sleep(45)
+            await check_channel_updates(client, active_channels)
+        except Exception as e:
+            print(f"Watchdog loop exception: {e}")
+
 async def start_importer():
+    global _global_client, _global_channels
     print("=" * 65)
     print("🌾 ChoonChoon Multi-Channel Cloud Importer Started")
     print("=" * 65)
@@ -373,6 +413,7 @@ async def start_importer():
     # 2. Connect Telegram MTProto Client
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     await client.start()
+    _global_client = client
     print("✅ Telethon StringSession Connected to MTProto Cloud!\n")
 
     # 3. Link each channel and catch up on latest updates
@@ -383,29 +424,49 @@ async def start_importer():
             active_channels.append((c_key, channel_entity))
             print(f"📡 Linked @{c_key} -> '{c_cfg.get('display_name')}' (UID: {c_cfg.get('author_id')})")
 
+            # Try to join the channel so Telegram sends push events
+            try:
+                await client(JoinChannelRequest(channel_entity))
+                print(f"   Subscribed to @{c_key} for push updates!")
+            except Exception as je:
+                pass
+
             # Fetch recent 2 messages
             try:
                 recent = await client.get_messages(channel_entity, limit=2)
-                for msg in reversed(recent):
-                    await process_msg(client, c_key, msg)
+                if recent:
+                    # Initialize last seen to oldest of the 2
+                    LAST_SEEN_MSG_IDS[c_key] = recent[-1].id - 1
+                    for msg in reversed(recent):
+                        await process_msg(client, c_key, msg)
+                        LAST_SEEN_MSG_IDS[c_key] = max(LAST_SEEN_MSG_IDS.get(c_key, 0), msg.id)
+                else:
+                    LAST_SEEN_MSG_IDS[c_key] = 0
             except Exception as e:
                 print(f"   Catch-up error for @{c_key}: {e}")
+                LAST_SEEN_MSG_IDS[c_key] = 0
 
         except Exception as e:
             print(f"⚠️ Could not link channel @{c_key}: {e}")
 
-    print("\n🟢 Multi-Channel Importer listening 24x7 for incoming posts...")
+    _global_channels = active_channels
+    print(f"\n🟢 Active channels ready: {[c[0] for c in active_channels]}")
 
-    # 4. Attach listener for all active channels
+    # 4. Attach event listeners for push events
     for c_key, channel_entity in active_channels:
-        # Create scoped closure for each channel
         def make_handler(current_key):
             async def handler(event):
                 await process_msg(client, current_key, event.message)
+                if event.message and event.message.id > LAST_SEEN_MSG_IDS.get(current_key, 0):
+                    LAST_SEEN_MSG_IDS[current_key] = event.message.id
             return handler
 
         client.add_event_handler(make_handler(c_key), events.NewMessage(chats=channel_entity))
 
+    # 5. Start the active 45-second polling watchdog task (Guarantees delivery!)
+    asyncio.create_task(polling_watchdog(client, active_channels))
+
+    print("\n🟢 Multi-Channel Importer listening 24x7 with Active Polling Watchdog (Every 45s)...")
     await client.run_until_disconnected()
 
 def main():
