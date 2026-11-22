@@ -61,6 +61,18 @@ CHANNELS_CONFIG = {
         "bio": "📚 राजस्थान की हर भर्ती परीक्षा, परिणाम, उत्तर कुंजी व प्रवेश पत्र री सबसूं सटीक व तेज जानकारी।",
         "district_id": "jaipur",
         "tehsil": "जयपुर"
+    },
+    "kalamacademysikar": {
+        "author_id": None,
+        "email": "kalamacademysikar@gmail.com",
+        "password": "123456",
+        "username": "kalamacademysikar",
+        "display_name": "कलाम एकेडमी सीकर",
+        "avatar_url": "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=400&auto=format&fit=crop&q=80",
+        "badge": "कलाम एकेडमी सीकर",
+        "bio": "🎯 RAS, शिक्षक ग्रेड 1, 2, 3 (REET), सब-इंस्पेक्टर व राजस्थान री सभी प्रतियोगी परीक्षाओं री सर्वश्रेष्ठ तैयारी।",
+        "district_id": "sikar",
+        "tehsil": "सीकर"
     }
 }
 
