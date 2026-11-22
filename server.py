@@ -90,17 +90,16 @@ CHANNELS_CONFIG = {
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "2")
         self.end_headers()
-        res = {
-            "status": "healthy",
-            "service": "ChoonChoon Multi-Channel Telegram Cloud Importer",
-            "channels": list(CHANNELS_CONFIG.keys()),
-            "last_seen_ids": LAST_SEEN_MSG_IDS,
-            "processed_count": len(PROCESSED_IDS),
-            "uptime_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        }
-        self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+        self.wfile.write(b"OK")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def log_message(self, format, *args):
         return
