@@ -468,10 +468,18 @@ async def start_importer():
     print("\n🟢 Multi-Channel Importer listening 24x7 with Active Polling Watchdog (Every 45s)...")
     await client.run_until_disconnected()
 
+async def safe_start_importer():
+    while True:
+        try:
+            await start_importer()
+        except Exception as e:
+            print(f"❌ Importer loop error: {e}, auto-restarting in 10s...")
+            await asyncio.sleep(10)
+
 def main():
     t = threading.Thread(target=run_health_server, daemon=True)
     t.start()
-    asyncio.run(start_importer())
+    asyncio.run(safe_start_importer())
 
 if __name__ == "__main__":
     main()
